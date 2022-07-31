@@ -1,62 +1,35 @@
 struct Elem<T> {
+    pub next: usize,
     pub elem: T,
-    pub next: *mut Elem<T>,
 }
 
 pub struct RemoveList<T> {
     data: Vec<Elem<T>>,
-    first: *mut Elem<T>,
-    capacity: usize,
+    first: usize,
     size: usize,
-    write_index: usize,
-    previous: *mut Elem<T>,
+    last: usize,
 }
 
 impl<T> RemoveList<T> {
 
     pub fn new(capacity: usize) -> Self {
-        let mut data = Vec::with_capacity(capacity);
-        let first: *mut Elem<T> = &mut data[0] as *mut Elem<T>;
-        let previous: *mut Elem<T> = &mut data[0] as *mut Elem<T>;
         RemoveList {
-            data,
-            first,
-            capacity,
+            data: Vec::with_capacity(capacity),
+            first: 0,
             size: 0,
-            write_index: 0,
-            previous,
+            last: 0,
         }
     }
 
     pub fn push(&mut self, elem: T) {
-        if self.write_index == self.capacity {
-            self.capacity *= 2;
-            let mut new_data = Vec::with_capacity(self.capacity);
-            let mut index = 0;
+
+        self.data.push(Elem {
+            elem,
+            next: 0
+        });
         
-            let mut current = self.first;
-            while current != std::ptr::null_mut() {
-                unsafe {
-                    new_data[index] = Elem {
-                        elem: (*current).elem,  // ok, so this isnt gonna work huh...
-                        next: &mut new_data[index+1] as *mut Elem<T>,
-                    };
-                
-                    current = (*current).next;
-                    index += 1;
-                }
-            }
-        
-            self.previous = &mut new_data[index-1] as *mut Elem<T>;
-            self.data = new_data;
-            self.first = &mut self.data[0] as *mut Elem<T>;
-        }
-        unsafe {
-            (*self.previous).next = &mut self.data[self.write_index] as *mut Elem<T>;
-        }
-        self.data[self.write_index].next = std::ptr::null_mut();
-        self.data[self.write_index].elem = elem;
-        self.write_index += 1;
+        self.data[self.last].next = self.data.len() - 1;
+        self.last = self.data.len() - 1;
         self.size += 1;
     }
 
@@ -73,34 +46,47 @@ impl<T> RemoveList<T> {
     pub fn remove_if(&mut self, predicate: fn(&T) -> bool) {
         if self.size == 0 { return; }
 
-        unsafe {
-        while predicate(&(*self.first).elem) {
-            self.first = (*self.first).next;
+        while predicate(&self.data[self.first].elem) {
+            self.first = self.data[self.first].next;
             self.size -= 1;
             if self.size == 0 { return; }
         }
 
-        let mut previous = self.first;
-        let mut current = (*self.first).next;
-        while current != std::ptr::null_mut() {
-            if predicate(&(*current).elem) {
-                (*previous).next = (*current).next;
+        let mut curr = self.data[self.first].next;
+        let mut prev = self.first;
+        
+        while curr != 0 {
+            if predicate(&self.data[curr].elem) {
+                self.data[prev].next = self.data[curr].next;
                 self.size -= 1;
                 continue;
             }
-            previous = current;
-            current = (*current).next;
+            prev = curr;
+            curr = self.data[curr].next;
         }
-    }}
+    }
 
-    pub fn for_each<F>(&mut self, mut f: F) where F: FnMut(&T) {
+    pub fn for_each<F>(&mut self, f: F) where F: Fn(&T) {
         if self.size == 0 { return; }
         let mut current = self.first;
-        while current != std::ptr::null_mut() {
-            unsafe{
-            f(&(*current).elem);
-            current = (*current).next;
-        }}
+
+        f(&self.data[current].elem);
+        current = self.data[current].next;
+
+        while current != 0 {
+            f(&self.data[current].elem);
+            current = self.data[current].next;
+        }
+    }
+
+    pub fn for_each_mut<F>(&mut self, mut f: F) where F: FnMut(&T) {
+        if self.size == 0 { return; }
+        let mut current = self.first;
+
+        while current != 0 {
+            f(&self.data[current].elem);
+            current = self.data[current].next;
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -112,6 +98,6 @@ impl<T> RemoveList<T> {
     }
 
     pub fn capacity(&self) -> usize {
-        self.capacity
+        self.data.capacity()
     }
 }
