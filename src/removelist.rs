@@ -59,9 +59,9 @@ impl<T> RemoveList<T> {
             if predicate(&self.data[curr].elem) {
                 self.data[prev].next = self.data[curr].next;
                 self.size -= 1;
-                continue;
+            } else {
+                prev = curr;
             }
-            prev = curr;
             curr = self.data[curr].next;
         }
     }

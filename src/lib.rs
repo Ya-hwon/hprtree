@@ -43,24 +43,24 @@ mod tests {
         assert!(removelist.size() == numentries);
         assert!(removelist.capacity() >= numentries);
         let mut i: usize = 0;
-        removelist.for_each(|elem| {
+        removelist.for_each_mut(|elem| {
             assert!(*elem == i);
             i += 1;
         });
         assert!(removelist.size() == numentries);
         assert!(removelist.capacity() >= numentries);
         removelist.remove_if(|elem|{
-            *elem % 2 == 0
+            *elem % 2 != 0
         });
         assert!(removelist.size() == numentries / 2);
         assert!(removelist.capacity() >= numentries / 2);
         i = 0;
-        removelist.for_each(|elem| {
+        removelist.for_each_mut(|elem| {
             assert!(*elem == i);
             i += 2;
         });
         removelist.remove_if(|elem|{
-            *elem % 2 != 0
+            *elem % 2 == 0
         });
         assert!(removelist.size() == 0);
     }
