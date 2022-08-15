@@ -229,53 +229,60 @@ impl<T> HPRTree<T> where T: Clone {
         }
     }
 
-    fn query_node_children(&self, layer_index: usize, block_offset: &usize, query_env: &Envelope, remove_list: &mut Vec<T>) {
+    fn query_node_children(&self, layer_index: usize, block_offset: &usize, query_env: &Envelope, candidate_list: &mut Vec<T>) {
         let layer_start = self.layer_start_index[layer_index];
         let layer_end = self.layer_start_index[layer_index + 1];
         for i in 0..NODE_CAPACITY {
             let node_offset = block_offset + i;
             if node_offset + layer_start >= layer_end { return; }
-            self.query_node(&layer_index, &node_offset, query_env, remove_list)
+            self.query_node(&layer_index, &node_offset, query_env, candidate_list)
         }
     }
 
-    fn query_items(&self, block_start: usize, query_env: &Envelope, remove_list: &mut Vec<T>) {
+    fn query_items(&self, block_start: usize, query_env: &Envelope, candidate_list: &mut Vec<T>) {
         for i in 0..NODE_CAPACITY{
             let item_index = block_start + i;
             if item_index >= self.items.len() { return; }
             let current_item = self.items[item_index].clone();
             if query_env.contains(&current_item.index_geom) {
-                remove_list.push(current_item.item);
+                candidate_list.push(current_item.item);
             }
         }
     }
 
-    fn query_node(&self, layer_index: &usize, node_offset: &usize, query_env: &Envelope, remove_list: &mut Vec<T>) {
+    fn query_node(&self, layer_index: &usize, node_offset: &usize, query_env: &Envelope, candidate_list: &mut Vec<T>) {
         let layer_start = self.layer_start_index[*layer_index];
         let node_index = layer_start + *node_offset;
 
         if ! query_env.intersects(&self.node_bounds[node_index]) { return; }
         let child_node_offset = node_offset * NODE_CAPACITY;
         if *layer_index != 0 {
-            self.query_node_children(*layer_index - 1, &child_node_offset, query_env, remove_list);
+            self.query_node_children(*layer_index - 1, &child_node_offset, query_env, candidate_list);
         } else {
-            self.query_items(child_node_offset, query_env, remove_list);
+            self.query_items(child_node_offset, query_env, candidate_list);
         }
     }
 
-    pub fn query(&self, query_env: &Envelope) -> Vec<T> {
-        if ! self.extent.intersects(query_env) { return Vec::new(); }
+    pub fn query_with_list(&self, query_env: &Envelope, candidate_list: &mut Vec<T>) {
+        if ! self.extent.intersects(query_env) { return; }
 
         let layer_index = self.layer_start_index.len() - 2;
         let layer_size = self.get_layer_size(layer_index);
 
-        let mut result = Vec::new();
-
         for i in 0..layer_size {
-            self.query_node(&layer_index, &i, query_env, &mut result);
+            self.query_node(&layer_index, &i, query_env, candidate_list);
         }
+    }
 
-        result
+    pub fn query(&self, query_env: &Envelope) -> Vec<T> {
+
+        if ! self.extent.intersects(query_env) { return Vec::new(); }
+
+        let mut candidate_list = Vec::with_capacity((self.avg_entries()*query_env.height()*query_env.width()) as usize);
+
+        self.query_with_list(query_env, &mut candidate_list);
+
+        candidate_list
     }
 
     pub fn new(size: usize) -> Self {
