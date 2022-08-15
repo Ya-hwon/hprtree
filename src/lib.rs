@@ -1,69 +1,10 @@
 mod hprtree;
-mod removelist;
 
 pub use crate::hprtree::*;
-pub use crate::removelist::*;
 
 #[cfg(test)]
 mod tests {
-    use crate::{HPRTree, Point, Envelope, RemoveList};
-
-    #[test]
-    fn general_removelist() {
-        let mut removelist: RemoveList<usize> = RemoveList::<usize>::new(3);
-        removelist.remove_if(|_elem| {
-            true
-        });
-        assert!(removelist.size() == 0);
-        removelist.for_each(|_elem| {
-            assert!(false);
-        });
-        //assert!(removelist.to_vec().len() == 0);
-        removelist.remove_if(|_elem| {
-            assert!(false);
-            false
-        });
-        removelist.push(1);
-        removelist.push(2);
-        removelist.push(3);
-        assert!(removelist.size() == 3);
-        assert!(removelist.capacity() >= 3);
-    }
-
-    #[test]
-    fn content_removelist() {
-        let numentries = 1_000;
-
-        let mut removelist: RemoveList<usize> = RemoveList::<usize>::new(numentries);
-        assert!(removelist.size() == 0);
-        assert!(removelist.capacity() >= numentries);
-        for i in 0..numentries {
-            removelist.push(i);
-        }
-        assert!(removelist.size() == numentries);
-        assert!(removelist.capacity() >= numentries);
-        let mut i: usize = 0;
-        removelist.for_each_mut(|elem| {
-            assert!(*elem == i);
-            i += 1;
-        });
-        assert!(removelist.size() == numentries);
-        assert!(removelist.capacity() >= numentries);
-        removelist.remove_if(|elem|{
-            *elem % 2 != 0
-        });
-        assert!(removelist.size() == numentries / 2);
-        assert!(removelist.capacity() >= numentries / 2);
-        i = 0;
-        removelist.for_each_mut(|elem| {
-            assert!(*elem == i);
-            i += 2;
-        });
-        removelist.remove_if(|elem|{
-            *elem % 2 == 0
-        });
-        assert!(removelist.size() == 0);
-    }
+    use crate::{HPRTree, Point, Envelope};
 
     #[test]
     fn hprtree_end_to_end() {

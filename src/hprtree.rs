@@ -1,4 +1,4 @@
-use std::mem;
+use std::mem::size_of;
 
 #[derive(Clone)]
 pub struct Envelope {
@@ -292,10 +292,10 @@ impl<T> HPRTree<T> where T: Clone {
     }
 
     pub fn current_size_in_bytes(&self) -> usize {
-        self.items.len() * mem::size_of::<IndexItem<T>>() + 
-        self.layer_start_index.len() * mem::size_of::<usize>() +
-        self.node_bounds.len() * mem::size_of::<Envelope>() +
-        mem::size_of::<Envelope>()
+        self.items.len() * size_of::<IndexItem<T>>() + 
+        self.layer_start_index.len() * size_of::<usize>() +
+        self.node_bounds.len() * size_of::<Envelope>() +
+        size_of::<Envelope>()
     }
 
     pub fn insert(&mut self, item: T, geom: &Point) {
