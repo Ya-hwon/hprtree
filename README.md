@@ -25,12 +25,12 @@ use hprtree::{Point, BBox, HPRTree};
 
 let mut index = HPRTree::new(10);
 index.insert("Bob".to_string(), &Point{ x: 0f32, y: 0f32 });
-for i in 0..2 {
+for _ in 0..2 {
     index.insert("Alice".to_string(), &Point{ x: 1f32, y: 1f32 });
 }
 index.insert("James".to_string(), &Point{ x: 2.5f32, y: -2.5f32 });
 index.insert("Annie".to_string(), &Point{ x: 20f32, y: 1f32 });
-for i in 0..5 {
+for _ in 0..5 {
     index.insert("Thomas".to_string(), &Point{ x: 1f32, y: -50f32 });
 }
 
