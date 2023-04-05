@@ -8,22 +8,21 @@ pub use crate::hprtree::*;
 
 #[cfg(test)]
 mod tests {
-    use crate::{BBox, HPRTree, Point};
+    use crate::{BBox, HPRTree, Point, HPRTreeBuilder};
     use test::Bencher;
 
     fn build_bench_hprtree(mult: usize) -> HPRTree<usize> {
-        let mut index = HPRTree::<usize>::new(259200);
+        let mut index = HPRTreeBuilder::<usize>::new(259200);
         let mut x = -180f32;
         for i in 0..(180 * mult) {
             let mut y = -90f32;
             for j in 0..(90 * mult) {
-                index.insert(i * 1000 + j, &Point { x, y });
+                index.insert(i * 1000 + j, Point { x, y });
                 y += 2f32 / mult as f32;
             }
             x += 2f32 / mult as f32;
         }
-        index.build();
-        index
+        index.build()
     }
 
     // #[bench]
@@ -94,17 +93,17 @@ mod tests {
 
     #[test]
     fn hprtree_end_to_end() {
-        let mut index = HPRTree::new(259200);
+        let mut index = HPRTreeBuilder::new(259200);
         let mut x = -180f32;
         for i in 0..(180 * 2 * 2) {
             let mut y = -90f32;
             for j in 0..(90 * 2 * 2) {
-                index.insert(i * 1000 + j, &Point { x, y });
+                index.insert(i * 1000 + j, Point { x, y });
                 y += 0.5;
             }
             x += 0.5;
         }
-        index.build();
+        let index = index.build();
         let list = index.query(&BBox {
             minx: -10f32,
             miny: -10f32,
