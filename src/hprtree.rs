@@ -90,6 +90,11 @@ const NODE_CAPACITY: usize = 16;
 const HILBERT_LEVEL: usize = 12;
 const H: usize = (1 << HILBERT_LEVEL) - 1;
 
+pub struct HPRTreeBuilder<T> {
+    items: Vec<IndexItem<T>>,
+    extent: BBox,
+}
+
 /// The spatial index, start here
 pub struct HPRTree<T> {
     items: Vec<IndexItem<T>>,
@@ -180,20 +185,20 @@ fn hilbert_xy_to_index(x: u32, y: u32) -> u32 {
 /// Example usage:
 ///
 /// ```
-/// use hprtree::{Point, BBox, HPRTree};
+/// use hprtree::{Point, BBox, HPRTreeBuilder};
 ///
-/// let mut index = HPRTree::new(10);
-/// index.insert("Bob".to_string(), &Point{ x: 0f32, y: 0f32 });
-/// for i in 0..2 {
-///     index.insert("Alice".to_string(), &Point{ x: 1f32, y: 1f32 });
+/// let mut index = HPRTreeBuilder::new(10);
+/// index.insert("Bob".to_string(), Point{ x: 0f32, y: 0f32 });
+/// for _ in 0..2 {
+///     index.insert("Alice".to_string(), Point{ x: 1f32, y: 1f32 });
 /// }
-/// index.insert("James".to_string(), &Point{ x: 2.5f32, y: -2.5f32 });
-/// index.insert("Annie".to_string(), &Point{ x: 20f32, y: 1f32 });
-/// for i in 0..5 {
-///     index.insert("Thomas".to_string(), &Point{ x: 1f32, y: -50f32 });
+/// index.insert("James".to_string(), Point{ x: 2.5f32, y: -2.5f32 });
+/// index.insert("Annie".to_string(), Point{ x: 20f32, y: 1f32 });
+/// for _ in 0..5 {
+///     index.insert("Thomas".to_string(), Point{ x: 1f32, y: -50f32 });
 /// }
 ///
-/// index.build();
+/// let index = index.build();
 ///
 /// let mut result = Vec::with_capacity(4);
 /// index.query_with_list(&BBox
@@ -211,15 +216,15 @@ fn hilbert_xy_to_index(x: u32, y: u32) -> u32 {
 /// }
 /// ```
 
-impl<T> HPRTree<T>
+fn get_layer_size(layer: usize, layer_start_index: &Vec<usize>) -> usize {
+    layer_start_index[layer + 1] - layer_start_index[layer]
+}
+
+impl<T> HPRTreeBuilder<T>
 where
     T: Clone,
 {
-    fn get_layer_size(&self, layer: usize) -> usize {
-        self.layer_start_index[layer + 1] - self.layer_start_index[layer]
-    }
-
-    fn sort_items(&mut self) {
+    pub fn sort_items(&mut self) {
         let stride_x = self.extent.width() / H as f32;
         let stride_y = self.extent.height() / H as f32;
 
@@ -239,14 +244,22 @@ where
         });
     }
 
-    fn compute_layer_start_indices(&mut self) {
+    /// Creates a new tree builder with base capacity
+    pub fn new(size: usize) -> Self {
+        HPRTreeBuilder {
+            items: Vec::with_capacity(size),
+            extent: BBox::default(),
+        }
+    }
+
+    fn compute_layer_start_indices(&mut self) -> Vec<usize> {
         let mut item_count = self.items.len();
-        self.layer_start_index =
+        let mut layer_start_index =
             Vec::with_capacity((item_count as f32).log(NODE_CAPACITY as f32).trunc() as usize);
         let mut index: usize = 0;
 
         loop {
-            self.layer_start_index.push(index);
+            layer_start_index.push(index);
 
             item_count /= NODE_CAPACITY;
 
@@ -259,24 +272,25 @@ where
                 break;
             }
         }
+        layer_start_index
     }
 
-    fn compute_leaf_nodes(&mut self) {
-        for i in 0..self.layer_start_index[1] {
+    fn compute_leaf_nodes(&mut self, layer_start_index: &Vec<usize>, node_bounds: &mut Vec<BBox>) {
+        for i in 0..layer_start_index[1] {
             for j in 0..=NODE_CAPACITY {
                 let index = NODE_CAPACITY * i + j;
                 if index >= self.items.len() {
                     return;
                 }
-                self.node_bounds[i].expand_to_include_point(&self.items[index].index_geom);
+                node_bounds[i].expand_to_include_point(&self.items[index].index_geom);
             }
         }
     }
-    fn compute_layer_nodes(&mut self) {
-        for i in 1..(self.layer_start_index.len() - 1) {
-            let layer_start = self.layer_start_index[i];
-            let layer_size = self.get_layer_size(i);
-            let child_layer_start = self.layer_start_index[i - 1];
+    fn compute_layer_nodes(&mut self, layer_start_index: &Vec<usize>, node_bounds: &mut Vec<BBox>) {
+        for i in 1..(layer_start_index.len() - 1) {
+            let layer_start = layer_start_index[i];
+            let layer_size = get_layer_size(i, layer_start_index);
+            let child_layer_start = layer_start_index[i - 1];
             let child_layer_end = layer_start;
             for j in 0..layer_size {
                 let child_start = child_layer_start + NODE_CAPACITY * j;
@@ -285,13 +299,76 @@ where
                     if index >= child_layer_end {
                         break;
                     }
-                    let child = self.node_bounds[index].clone();
-                    self.node_bounds[layer_start + j].expand_to_include(&child);
+                    let (node_bounds_left, node_bounds_right) =
+                        node_bounds.split_at_mut(layer_start + j);
+
+                    if let Some(child) = node_bounds_left.get(index) {
+                        node_bounds_right[0].expand_to_include(child);
+                    }
+                    // this is ugly but arguably less ugly then the following - i sincerely hope there is a better way to do this though
+                    // unsafe {
+                    //     let child = node_bounds.as_ptr().offset(index.try_into().unwrap());
+                    //     node_bounds[layer_start + j].expand_to_include(&*child);
+                    // }
                 }
             }
         }
     }
 
+    /// Inserts an element into the index
+    pub fn insert(&mut self, item: T, geom: Point) {
+        self.extent.expand_to_include_point(&geom);
+        self.items.push(IndexItem {
+            index_geom: geom,
+            item: item,
+        });
+    }
+
+    pub fn build_sorted(mut self) -> HPRTree<T> {
+        if self.items.len() < NODE_CAPACITY {
+            return HPRTree {
+                items: self.items,
+                extent: self.extent,
+                layer_start_index: Vec::new(),
+                node_bounds: Vec::new(),
+            };
+        }
+
+        let layer_start_index = self.compute_layer_start_indices();
+
+        let mut node_bounds = vec![BBox::default(); layer_start_index[layer_start_index.len() - 1]];
+
+        self.compute_leaf_nodes(&layer_start_index, &mut node_bounds);
+        self.compute_layer_nodes(&layer_start_index, &mut node_bounds);
+
+        HPRTree {
+            items: self.items,
+            extent: self.extent,
+            layer_start_index,
+            node_bounds,
+        }
+    }
+
+    pub fn build(mut self) -> HPRTree<T> {
+        if self.items.len() < NODE_CAPACITY {
+            return HPRTree {
+                items: self.items,
+                extent: self.extent,
+                layer_start_index: Vec::new(),
+                node_bounds: Vec::new(),
+            };
+        }
+
+        self.sort_items();
+
+        self.build_sorted()
+    }
+}
+
+impl<T> HPRTree<T>
+where
+    T: Clone,
+{
     fn query_node_children(
         &self,
         layer_index: usize,
@@ -363,7 +440,7 @@ where
         }
 
         let layer_index = self.layer_start_index.len() - 2;
-        let layer_size = self.get_layer_size(layer_index);
+        let layer_size = get_layer_size(layer_index, &self.layer_start_index);
 
         for i in 0..layer_size {
             self.query_node(&layer_index, &i, query_env, candidate_list);
@@ -371,8 +448,6 @@ where
     }
 
     /// Queries the tree by bounding box returning a Vec of the found elements
-    ///
-    /// Only query after the tree is built!
     pub fn query(&self, query_env: &BBox) -> Vec<T> {
         if !self.extent.intersects(query_env) {
             return Vec::new();
@@ -387,17 +462,7 @@ where
         candidate_list
     }
 
-    /// Creates a new tree with base capacity
-    pub fn new(size: usize) -> Self {
-        HPRTree {
-            items: Vec::with_capacity(size),
-            extent: BBox::default(),
-            layer_start_index: Vec::new(),
-            node_bounds: Vec::new(),
-        }
-    }
-
-    /// Returns how many elements are in an area unit on average, may help with guessing how many entities will be found in a given bounding box if the entries are somewhat evenly destributed
+    /// Returns how many elements are in an area unit on average, may help with guessing how many entities will be found in a given bounding box if the entries are somewhat evenly distributed
     pub fn avg_entries(&self) -> f32 {
         self.items.len() as f32 / (self.extent.height() * self.extent.width())
     }
@@ -408,34 +473,6 @@ where
             + self.layer_start_index.len() * size_of::<usize>()
             + self.node_bounds.len() * size_of::<BBox>()
             + size_of::<BBox>()
-    }
-
-    /// Inserts an element into the index
-    ///
-    /// The elements are not to be queried for until the tree has been built
-    pub fn insert(&mut self, item: T, geom: &Point) {
-        self.items.push(IndexItem {
-            index_geom: geom.clone(),
-            item: item,
-        });
-        self.extent.expand_to_include_point(geom);
-    }
-
-    /// Builds the index, making previously inserted elements available through query
-    pub fn build(&mut self) {
-        if self.items.len() < NODE_CAPACITY {
-            return;
-        }
-
-        self.sort_items();
-
-        self.compute_layer_start_indices();
-
-        self.node_bounds =
-            vec![BBox::default(); self.layer_start_index[self.layer_start_index.len() - 1]];
-
-        self.compute_leaf_nodes();
-        self.compute_layer_nodes();
     }
 
     /// Returns the number of elements in the tree
