@@ -9,15 +9,6 @@ This is a Hilbert-Packed-R-Tree implementation for rust (maybe see [Wikipedia](h
 
 The (C++) code that handles the mapping between coordinates and hilbert index was not written by me and can be found on [GitHub](https://github.com/rawrunprotected/hilbert_curves) along with links to interesting writeups on (!only http) [http://threadlocalmutex.com](http://threadlocalmutex.com).
 
-## Usage
-
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-hprtree = "0.1.0"
-```
-
 ## Example usage
 
 ```rust
