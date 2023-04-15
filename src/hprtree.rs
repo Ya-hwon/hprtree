@@ -90,12 +90,14 @@ const NODE_CAPACITY: usize = 16;
 const HILBERT_LEVEL: usize = 12;
 const H: usize = (1 << HILBERT_LEVEL) - 1;
 
+/// The builder for the spatial index, start here
+#[derive(Clone)]
 pub struct HPRTreeBuilder<T> {
     items: Vec<IndexItem<T>>,
     extent: BBox,
 }
 
-/// The spatial index, start here
+/// The spatial index itself
 pub struct HPRTree<T> {
     items: Vec<IndexItem<T>>,
     extent: BBox,
@@ -182,6 +184,10 @@ fn hilbert_xy_to_index(x: u32, y: u32) -> u32 {
     return ((interleave(i1) << 1) | interleave(i0)) >> (32 - 2 * HILBERT_LEVEL);
 }
 
+fn get_layer_size(layer: usize, layer_start_index: &Vec<usize>) -> usize {
+    layer_start_index[layer + 1] - layer_start_index[layer]
+}
+
 /// Example usage:
 ///
 /// ```
@@ -216,14 +222,20 @@ fn hilbert_xy_to_index(x: u32, y: u32) -> u32 {
 /// }
 /// ```
 
-fn get_layer_size(layer: usize, layer_start_index: &Vec<usize>) -> usize {
-    layer_start_index[layer + 1] - layer_start_index[layer]
-}
-
 impl<T> HPRTreeBuilder<T>
 where
     T: Clone,
 {
+    /// Inserts an element into the index
+    pub fn insert(&mut self, item: T, geom: Point) {
+        self.extent.expand_to_include_point(&geom);
+        self.items.push(IndexItem {
+            index_geom: geom,
+            item,
+        });
+    }
+
+    /// Sorts the contained data, if this has been called before [build](#method.build), prefer [build_sorted](#method.build_sorted) instead
     pub fn sort_items(&mut self) {
         let stride_x = self.extent.width() / H as f32;
         let stride_y = self.extent.height() / H as f32;
@@ -250,6 +262,48 @@ where
             items: Vec::with_capacity(size),
             extent: BBox::default(),
         }
+    }
+
+    /// Builds the index and transfers the builders state into an HPRTree which is then returned, depends on the data being sorted already
+    pub fn build_sorted(mut self) -> HPRTree<T> {
+        if self.items.len() < NODE_CAPACITY {
+            return HPRTree {
+                items: self.items,
+                extent: self.extent,
+                layer_start_index: Vec::new(),
+                node_bounds: Vec::new(),
+            };
+        }
+
+        let layer_start_index = self.compute_layer_start_indices();
+
+        let mut node_bounds = vec![BBox::default(); layer_start_index[layer_start_index.len() - 1]];
+
+        self.compute_leaf_nodes(&layer_start_index, &mut node_bounds);
+        self.compute_layer_nodes(&layer_start_index, &mut node_bounds);
+
+        HPRTree {
+            items: self.items,
+            extent: self.extent,
+            layer_start_index,
+            node_bounds,
+        }
+    }
+
+    /// Sorts the data, builds the index and transfers the builders state into an HPRTree which is then returned
+    pub fn build(mut self) -> HPRTree<T> {
+        if self.items.len() < NODE_CAPACITY {
+            return HPRTree {
+                items: self.items,
+                extent: self.extent,
+                layer_start_index: Vec::new(),
+                node_bounds: Vec::new(),
+            };
+        }
+
+        self.sort_items();
+
+        self.build_sorted()
     }
 
     fn compute_layer_start_indices(&mut self) -> Vec<usize> {
@@ -314,55 +368,6 @@ where
             }
         }
     }
-
-    /// Inserts an element into the index
-    pub fn insert(&mut self, item: T, geom: Point) {
-        self.extent.expand_to_include_point(&geom);
-        self.items.push(IndexItem {
-            index_geom: geom,
-            item: item,
-        });
-    }
-
-    pub fn build_sorted(mut self) -> HPRTree<T> {
-        if self.items.len() < NODE_CAPACITY {
-            return HPRTree {
-                items: self.items,
-                extent: self.extent,
-                layer_start_index: Vec::new(),
-                node_bounds: Vec::new(),
-            };
-        }
-
-        let layer_start_index = self.compute_layer_start_indices();
-
-        let mut node_bounds = vec![BBox::default(); layer_start_index[layer_start_index.len() - 1]];
-
-        self.compute_leaf_nodes(&layer_start_index, &mut node_bounds);
-        self.compute_layer_nodes(&layer_start_index, &mut node_bounds);
-
-        HPRTree {
-            items: self.items,
-            extent: self.extent,
-            layer_start_index,
-            node_bounds,
-        }
-    }
-
-    pub fn build(mut self) -> HPRTree<T> {
-        if self.items.len() < NODE_CAPACITY {
-            return HPRTree {
-                items: self.items,
-                extent: self.extent,
-                layer_start_index: Vec::new(),
-                node_bounds: Vec::new(),
-            };
-        }
-
-        self.sort_items();
-
-        self.build_sorted()
-    }
 }
 
 impl<T> HPRTree<T>
@@ -426,9 +431,7 @@ where
         }
     }
 
-    /// Queries the tree by bounding box and pushes the found elements onto the vector, useful if the usecase enables better estimates for how many elements will be found (to reduce the chance for reallocation, over or underallocation)
-    ///
-    /// Only query after the tree is built!
+    /// Queries the tree by bounding box and pushes the found elements onto the vector, useful if the usecase enables better estimates for how many elements will be found (to reduce the chance for reallocation or overallocation)
     pub fn query_with_list(&self, query_env: &BBox, candidate_list: &mut Vec<T>) {
         if !self.extent.intersects(query_env) {
             return;
