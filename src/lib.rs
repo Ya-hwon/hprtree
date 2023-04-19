@@ -8,11 +8,11 @@ pub use crate::hprtree::*;
 
 #[cfg(test)]
 mod tests {
-    use crate::{BBox, HPRTree, Point, HPRTreeBuilder};
+    use crate::{BBox, HPRTree, HPRTreeBuilder, Point};
     use test::Bencher;
 
     fn build_bench_hprtree(mult: usize) -> HPRTree<usize> {
-        let mut index = HPRTreeBuilder::<usize>::new(259200);
+        let mut index = HPRTreeBuilder::<usize>::new(mult * 180 * mult * 90);
         let mut x = -180f32;
         for i in 0..(180 * mult) {
             let mut y = -90f32;

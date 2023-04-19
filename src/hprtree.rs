@@ -181,10 +181,10 @@ fn hilbert_xy_to_index(x: u32, y: u32) -> u32 {
     let i0 = x ^ y;
     let i1 = b | (0xFFFF ^ (i0 | a));
 
-    return ((interleave(i1) << 1) | interleave(i0)) >> (32 - 2 * HILBERT_LEVEL);
+    ((interleave(i1) << 1) | interleave(i0)) >> (32 - 2 * HILBERT_LEVEL)
 }
 
-fn get_layer_size(layer: usize, layer_start_index: &Vec<usize>) -> usize {
+fn get_layer_size(layer: usize, layer_start_index: &[usize]) -> usize {
     layer_start_index[layer + 1] - layer_start_index[layer]
 }
 
@@ -242,17 +242,10 @@ where
 
         let extent_min_x = self.extent.minx;
 
-        self.items.sort_unstable_by(|lhs, rhs| {
-            let xlhs: u32 = ((lhs.index_geom.x - extent_min_x) / stride_x).trunc() as u32;
-            let ylhs: u32 = ((lhs.index_geom.y - extent_min_x) / stride_y).trunc() as u32;
-
-            let xrhs: u32 = ((rhs.index_geom.x - extent_min_x) / stride_x).trunc() as u32;
-            let yrhs: u32 = ((rhs.index_geom.y - extent_min_x) / stride_y).trunc() as u32;
-
-            let indexlhs = hilbert_xy_to_index(xlhs, ylhs);
-            let indexrhs = hilbert_xy_to_index(xrhs, yrhs);
-
-            indexlhs.cmp(&indexrhs)
+        self.items.sort_by_cached_key(|pt| {
+            let x: u32 = ((pt.index_geom.x - extent_min_x) / stride_x).trunc() as u32;
+            let y: u32 = ((pt.index_geom.y - extent_min_x) / stride_y).trunc() as u32;
+            hilbert_xy_to_index(x, y)
         });
     }
 
@@ -277,7 +270,7 @@ where
 
         let layer_start_index = self.compute_layer_start_indices();
 
-        let mut node_bounds = vec![BBox::default(); layer_start_index[layer_start_index.len() - 1]];
+        let mut node_bounds = vec![BBox::default(); *layer_start_index.last().unwrap()];
 
         self.compute_leaf_nodes(&layer_start_index, &mut node_bounds);
         self.compute_layer_nodes(&layer_start_index, &mut node_bounds);
@@ -329,7 +322,7 @@ where
         layer_start_index
     }
 
-    fn compute_leaf_nodes(&mut self, layer_start_index: &Vec<usize>, node_bounds: &mut Vec<BBox>) {
+    fn compute_leaf_nodes(&mut self, layer_start_index: &[usize], node_bounds: &mut [BBox]) {
         for i in 0..layer_start_index[1] {
             for j in 0..=NODE_CAPACITY {
                 let index = NODE_CAPACITY * i + j;
@@ -340,7 +333,7 @@ where
             }
         }
     }
-    fn compute_layer_nodes(&mut self, layer_start_index: &Vec<usize>, node_bounds: &mut Vec<BBox>) {
+    fn compute_layer_nodes(&mut self, layer_start_index: &[usize], node_bounds: &mut [BBox]) {
         for i in 1..(layer_start_index.len() - 1) {
             let layer_start = layer_start_index[i];
             let layer_size = get_layer_size(i, layer_start_index);
@@ -437,7 +430,7 @@ where
             return;
         }
 
-        if self.layer_start_index.len() == 0 {
+        if self.layer_start_index.is_empty() {
             self.query_items(0, query_env, candidate_list);
             return;
         }
@@ -475,6 +468,17 @@ where
         self.items.len() * size_of::<IndexItem<T>>()
             + self.layer_start_index.len() * size_of::<usize>()
             + self.node_bounds.len() * size_of::<BBox>()
+            + size_of::<BBox>()
+    }
+
+    /// Approximates how many bytes would be taken up by the data of a tree with a given size and index element type
+    pub fn projected_size_in_bytes(elems: usize) -> usize {
+        elems * size_of::<IndexItem<T>>()
+            + (elems as f32).log(NODE_CAPACITY as f32).trunc() as usize * size_of::<usize>()
+            + (elems as f64*0.0667+2.2143).trunc() as usize * size_of::<BBox>()
+            // approximate linear regression from the following values
+            // 16200    64800   145800  259200  405000  583200  793800  1036800
+            // 1082     4323    9722    17283   27002   38882   52921   69124
             + size_of::<BBox>()
     }
 
