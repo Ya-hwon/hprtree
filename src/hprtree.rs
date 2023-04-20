@@ -11,19 +11,21 @@ pub struct BBox {
     pub maxy: f32,
 }
 
-impl BBox {
+impl Default for BBox {
     /// The default of the bbox is min = f32::MAX and max = f32::MIN
     ///
     /// This is so that "expanding to include"ing such a bbox results in whatever was used to expand the bbox by
-    pub fn default() -> BBox {
-        BBox {
+    fn default() -> Self {
+        Self {
             minx: f32::MAX,
             miny: f32::MAX,
             maxx: f32::MIN,
             maxy: f32::MIN,
         }
     }
+}
 
+impl BBox {
     pub fn new(minx: f32, miny: f32, maxx: f32, maxy: f32) -> BBox {
         BBox {
             minx,
@@ -226,6 +228,14 @@ impl<T> HPRTreeBuilder<T>
 where
     T: Clone,
 {
+    /// Creates a new tree builder with base capacity
+    pub fn new(size: usize) -> Self {
+        HPRTreeBuilder {
+            items: Vec::with_capacity(size),
+            extent: BBox::default(),
+        }
+    }
+
     /// Inserts an element into the index
     pub fn insert(&mut self, item: T, geom: Point) {
         self.extent.expand_to_include_point(&geom);
@@ -235,29 +245,37 @@ where
         });
     }
 
-    /// Sorts the contained data, if this has been called before [build](#method.build), prefer [build_sorted](#method.build_sorted) instead
+    /// Sorts the data, builds the index and transfers the builders state into an HPRTree which is then returned. If [sort_items](#method.sort_items) has been called before, prefer [build_sorted](#method.build_sorted) instead
+    pub fn build(mut self) -> HPRTree<T> {
+        if self.items.len() < NODE_CAPACITY {
+            return HPRTree {
+                items: self.items,
+                extent: self.extent,
+                layer_start_index: Vec::new(),
+                node_bounds: Vec::new(),
+            };
+        }
+
+        self.sort_items();
+
+        self.build_sorted()
+    }
+
+    /// Sorts the contained data (in preparation for [build_sorted](#method.build_sorted))
     pub fn sort_items(&mut self) {
         let stride_x = self.extent.width() / H as f32;
         let stride_y = self.extent.height() / H as f32;
 
-        let extent_min_x = self.extent.minx;
+        let extent_min = self.extent.minx.min(self.extent.miny);
 
         self.items.sort_by_cached_key(|pt| {
-            let x: u32 = ((pt.index_geom.x - extent_min_x) / stride_x).trunc() as u32;
-            let y: u32 = ((pt.index_geom.y - extent_min_x) / stride_y).trunc() as u32;
+            let x: u32 = ((pt.index_geom.x - extent_min) / stride_x).trunc() as u32;
+            let y: u32 = ((pt.index_geom.y - extent_min) / stride_y).trunc() as u32;
             hilbert_xy_to_index(x, y)
         });
     }
 
-    /// Creates a new tree builder with base capacity
-    pub fn new(size: usize) -> Self {
-        HPRTreeBuilder {
-            items: Vec::with_capacity(size),
-            extent: BBox::default(),
-        }
-    }
-
-    /// Builds the index and transfers the builders state into an HPRTree which is then returned, depends on the data being sorted already
+    /// Builds the index and transfers the builders state into an HPRTree which is then returned, depends on the data being sorted (by [sort_items](#method.sort_items)) already
     pub fn build_sorted(mut self) -> HPRTree<T> {
         if self.items.len() < NODE_CAPACITY {
             return HPRTree {
@@ -283,20 +301,19 @@ where
         }
     }
 
-    /// Sorts the data, builds the index and transfers the builders state into an HPRTree which is then returned
-    pub fn build(mut self) -> HPRTree<T> {
-        if self.items.len() < NODE_CAPACITY {
-            return HPRTree {
-                items: self.items,
-                extent: self.extent,
-                layer_start_index: Vec::new(),
-                node_bounds: Vec::new(),
-            };
-        }
+    /// Returns the number of elements in the tree
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
 
-        self.sort_items();
+    /// Returns whether the tree is empty
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
 
-        self.build_sorted()
+    /// Returns the extent of the tree
+    pub fn extent(&self) -> BBox {
+        self.extent.clone()
     }
 
     fn compute_layer_start_indices(&mut self) -> Vec<usize> {
@@ -424,6 +441,21 @@ where
         }
     }
 
+    /// Queries the tree by bounding box returning a Vec of the found elements
+    pub fn query(&self, query_env: &BBox) -> Vec<T> {
+        if !self.extent.intersects(query_env) {
+            return Vec::new();
+        }
+
+        let n_guessed_candidates =
+            self.avg_entries() * query_env.height() * query_env.width() * 1.5;
+        let mut candidate_list = Vec::with_capacity((n_guessed_candidates) as usize);
+
+        self.query_with_list(query_env, &mut candidate_list);
+
+        candidate_list
+    }
+
     /// Queries the tree by bounding box and pushes the found elements onto the vector, useful if the usecase enables better estimates for how many elements will be found (to reduce the chance for reallocation or overallocation)
     pub fn query_with_list(&self, query_env: &BBox, candidate_list: &mut Vec<T>) {
         if !self.extent.intersects(query_env) {
@@ -441,21 +473,6 @@ where
         for i in 0..layer_size {
             self.query_node(&layer_index, &i, query_env, candidate_list);
         }
-    }
-
-    /// Queries the tree by bounding box returning a Vec of the found elements
-    pub fn query(&self, query_env: &BBox) -> Vec<T> {
-        if !self.extent.intersects(query_env) {
-            return Vec::new();
-        }
-
-        let mut candidate_list = Vec::with_capacity(
-            (self.avg_entries() * query_env.height() * query_env.width()) as usize,
-        );
-
-        self.query_with_list(query_env, &mut candidate_list);
-
-        candidate_list
     }
 
     /// Returns how many elements are in an area unit on average, may help with guessing how many entities will be found in a given bounding box if the entries are somewhat evenly distributed
@@ -483,7 +500,17 @@ where
     }
 
     /// Returns the number of elements in the tree
-    pub fn size(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.items.len()
+    }
+
+    /// Returns whether the tree is empty
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Returns the extent of the tree
+    pub fn extent(&self) -> BBox {
+        self.extent.clone()
     }
 }
