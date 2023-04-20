@@ -1,10 +1,10 @@
 [package]
 name = "hprtree"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 description = "A Hilbert-Packed-R-Tree implementation for rust"
-keywords = ["index", "spatial", "tree", "hilbert"]
+keywords = ["index", "spatial", "tree", "hilbert", "packed"]
 categories = ["data-structures"]
 license = "MIT"
 repository = "https://github.com/Ya-hwon/hprtree"
@@ -12,3 +12,5 @@ repository = "https://github.com/Ya-hwon/hprtree"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+[dev-dependencies]
+rand = "0.8.5"
