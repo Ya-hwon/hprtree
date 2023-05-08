@@ -263,8 +263,16 @@ where
 
     /// Sorts the contained data (in preparation for [build_sorted](#method.build_sorted))
     pub fn sort_items(&mut self) {
-        let stride_x = self.extent.width() / H as f32;
-        let stride_y = self.extent.height() / H as f32;
+        let stride_x = if self.extent.width() != 0f32 {
+            self.extent.width() / H as f32
+        } else {
+            1f32
+        };
+        let stride_y = if self.extent.height() != 0f32 {
+            self.extent.height() / H as f32
+        } else {
+            1f32
+        };
 
         let extent_min = self.extent.minx.min(self.extent.miny);
 
@@ -477,7 +485,11 @@ where
 
     /// Returns how many elements are in an area unit on average, may help with guessing how many entities will be found in a given bounding box if the entries are somewhat evenly distributed
     pub fn avg_entries(&self) -> f32 {
-        self.items.len() as f32 / (self.extent.height() * self.extent.width())
+        let area = self.extent.height() * self.extent.width();
+        if area == 0f32 {
+            return self.items.len() as f32;
+        }
+        self.items.len() as f32 / area
     }
 
     /// Returns how many bytes are taken up by the trees data

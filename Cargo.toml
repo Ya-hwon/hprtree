@@ -1,6 +1,6 @@
 [package]
 name = "hprtree"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 
 description = "A Hilbert-Packed-R-Tree implementation for rust"
@@ -14,3 +14,5 @@ repository = "https://github.com/Ya-hwon/hprtree"
 [dependencies]
 [dev-dependencies]
 rand = "0.8.5"
+actix-web = "4.3.1"
+serde = { version = "1.0.160", features = ["derive"] }
