@@ -349,6 +349,27 @@ where
         }
     }
 
+    pub fn query_range_with_list(&self, point: &Point, range: f32, elements_in_range: &mut Vec<T>) {
+
+        todo!();
+    }
+
+    pub fn query_range(&self, point: &Point, range: f32) -> Vec<T> {
+        let mut elements_in_range = Vec::with_capacity(todo!());
+
+        self.query_range_with_list(point, range, &mut elements_in_range);
+
+        elements_in_range
+    }
+
+    pub fn query_n_next_neighbours(&self, point: &Point, n: usize) -> Vec<T> {
+        let mut neightbours = Vec::with_capacity(n);
+
+        todo!();
+
+        neightbours
+    }
+
     /// Queries the tree by bounding box and pushes the found elements onto the vector, useful if the usecase enables better estimates for how many elements will be found (to reduce the chance for reallocation, over or underallocation)
     ///
     /// Only query after the tree is built!
