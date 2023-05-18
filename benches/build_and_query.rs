@@ -1,5 +1,4 @@
 #![feature(test)]
-
 extern crate test;
 
 use hprtree::{BBox, HPRTree, HPRTreeBuilder, Point};

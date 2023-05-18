@@ -1,5 +1,11 @@
 use std::mem::size_of;
 
+#[cfg(feature = "svgexport")]
+use svg::{
+    node::element::{path::Data, Circle, Path},
+    Document,
+};
+
 /// A simple stuct representing a bounding box / envelope, intended for lat/lon coordinates with lat=y, lon=x
 ///
 /// Used for querying the index and for the internal data structure of the HPRTree
@@ -366,13 +372,14 @@ where
             let child_layer_end = layer_start;
             for j in 0..layer_size {
                 let child_start = child_layer_start + NODE_CAPACITY * j;
+                let (node_bounds_left, node_bounds_right) =
+                    node_bounds.split_at_mut(layer_start + j);
+
                 for k in 0..=NODE_CAPACITY {
                     let index = child_start + k;
                     if index >= child_layer_end {
                         break;
                     }
-                    let (node_bounds_left, node_bounds_right) =
-                        node_bounds.split_at_mut(layer_start + j);
 
                     if let Some(child) = node_bounds_left.get(index) {
                         node_bounds_right[0].expand_to_include(child);
@@ -514,6 +521,81 @@ where
     /// Returns the number of elements in the tree
     pub fn len(&self) -> usize {
         self.items.len()
+    }
+
+    #[cfg(feature = "svgexport")]
+    fn gen_path(env: &BBox, col: &str, w: f32) -> Path {
+        let data = Data::new()
+            .move_to((env.minx, env.miny))
+            .line_to((env.minx, env.maxy))
+            .line_to((env.maxx, env.maxy))
+            .line_to((env.maxx, env.miny))
+            .close();
+        Path::new()
+            .set("fill", "none")
+            .set("stroke", col)
+            .set("stroke-width", w)
+            .set("d", data)
+    }
+
+    #[cfg(feature = "svgexport")]
+    fn gen_circle(pt: &Point) -> Circle {
+        Circle::new()
+            .set("cy", pt.y)
+            .set("cx", pt.x)
+            .set("r", 0.5)
+            .set("fill", "yellow")
+    }
+
+    #[cfg(feature = "svgexport")]
+    pub fn export_svg(&self, filename: String) {
+        let extent = &self.extent;
+
+        let mut paths = Vec::with_capacity(self.node_bounds.len());
+
+        paths.push(Self::gen_path(extent, "black", 0.3));
+
+        let layers = self.layer_start_index.len() - 2;
+
+        let cols = ["green", "lime", "lawngreen", "palegreen", "yellowgreen", "seagreen"];
+
+        assert!(layers <= cols.len());
+
+        for layer in 0..layers {
+            for p in self.node_bounds.iter().rev().take(get_layer_size(layer, &self.layer_start_index)) {
+                paths.push(Self::gen_path(p, cols[layer], 0.1));
+            }
+        }
+
+
+        // {
+        //     let layer_index = self.layer_start_index[1];
+        //     let layer_size = get_layer_size(1, &self.layer_start_index);
+        //     for i in layer_index..layer_index+layer_size {
+        //         paths.push(Self::gen_path(&self.node_bounds[i], "green"));
+        //     }
+        // }
+
+        let mut circles = Vec::with_capacity(self.len());
+
+        for pt in self.items.iter() {
+            circles.push(Self::gen_circle(&pt.index_geom));
+        }
+
+        let mut document = Document::new().set(
+            "viewBox",
+            (extent.minx, extent.miny, extent.width(), extent.height()),
+        );
+
+        for c in circles {
+            document = document.add(c);
+        }
+
+        for e in paths {
+            document = document.add(e);
+        }
+
+        svg::save(filename, &document).unwrap();
     }
 
     /// Returns whether the tree is empty
