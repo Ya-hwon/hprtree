@@ -284,7 +284,7 @@ where
     }
 
     /// Builds the index and transfers the builders state into an HPRTree which is then returned, depends on the data being sorted (by [sort_items](#method.sort_items)) already
-    pub fn build_sorted(mut self) -> HPRTree<T> {
+    pub fn build_sorted(self) -> HPRTree<T> {
         if self.items.len() < NODE_CAPACITY {
             return HPRTree {
                 items: self.items,
@@ -324,7 +324,7 @@ where
         self.extent.clone()
     }
 
-    fn compute_layer_start_indices(&mut self) -> Vec<usize> {
+    fn compute_layer_start_indices(&self) -> Vec<usize> {
         let mut item_count = self.items.len();
         let mut layer_start_index =
             Vec::with_capacity((item_count as f32).log(NODE_CAPACITY as f32).trunc() as usize);
@@ -347,7 +347,7 @@ where
         layer_start_index
     }
 
-    fn compute_leaf_nodes(&mut self, layer_start_index: &[usize], node_bounds: &mut [BBox]) {
+    fn compute_leaf_nodes(&self, layer_start_index: &[usize], node_bounds: &mut [BBox]) {
         for i in 0..layer_start_index[1] {
             for j in 0..=NODE_CAPACITY {
                 let index = NODE_CAPACITY * i + j;
@@ -358,7 +358,7 @@ where
             }
         }
     }
-    fn compute_layer_nodes(&mut self, layer_start_index: &[usize], node_bounds: &mut [BBox]) {
+    fn compute_layer_nodes(&self, layer_start_index: &[usize], node_bounds: &mut [BBox]) {
         for i in 1..(layer_start_index.len() - 1) {
             let layer_start = layer_start_index[i];
             let layer_size = get_layer_size(i, layer_start_index);
@@ -497,7 +497,7 @@ where
         self.items.len() * size_of::<IndexItem<T>>()
             + self.layer_start_index.len() * size_of::<usize>()
             + self.node_bounds.len() * size_of::<BBox>()
-            + size_of::<BBox>()
+            + size_of::<Self>()
     }
 
     /// Approximates how many bytes would be taken up by the data of a tree with a given size and index element type
@@ -508,7 +508,7 @@ where
             // approximate linear regression from the following values
             // 16200    64800   145800  259200  405000  583200  793800  1036800
             // 1082     4323    9722    17283   27002   38882   52921   69124
-            + size_of::<BBox>()
+            + size_of::<Self>()
     }
 
     /// Returns the number of elements in the tree
