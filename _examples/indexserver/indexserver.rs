@@ -7,7 +7,7 @@ use actix_web::{
     web::{self, Data},
     App, HttpResponse, HttpServer, Responder,
 };
-use hprtree::{BBox, HPRTree, HPRTreeBuilder, Point};
+use hprtree::{BBox, HPRTree, HPRTreeBuilder, SpatiallyIndexable};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +15,16 @@ struct Element {
     pub x: f32,
     pub y: f32,
     pub data: String,
+}
+
+impl SpatiallyIndexable for Element {
+    fn x(&self) -> hprtree::CoordinateType {
+        self.x
+    }
+
+    fn y(&self) -> hprtree::CoordinateType {
+        self.y
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,11 +55,7 @@ async fn add(
     let mut index = index.lock().unwrap();
     let mut index_builder = index_builder.lock().unwrap();
     let data = data.into_inner();
-    let pt = Point {
-        x: data.x,
-        y: data.y,
-    };
-    index_builder.insert(data, pt);
+    index_builder.insert(data);
     index_builder.sort_items();
     *index = index_builder.clone().build_sorted();
 

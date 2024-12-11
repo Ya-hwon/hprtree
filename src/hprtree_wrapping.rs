@@ -1,25 +1,32 @@
 use std::mem::size_of;
 
-use crate::{get_layer_size, hilbert_xy_to_index, BBox, SpatiallyIndexable, H, NODE_CAPACITY};
+use crate::{get_layer_size, hilbert_xy_to_index, BBox, Point, H, NODE_CAPACITY};
 
-/// The builder for the spatial index, start here
 #[derive(Clone)]
-pub struct HPRTreeBuilder<T>
+struct IndexItem<T>
 where
-    T: SpatiallyIndexable,
     T: Clone,
 {
-    items: Vec<T>,
+    pub index_geom: Point,
+    pub item: T,
+}
+
+/// The builder for the spatial index variant
+#[derive(Clone)]
+pub struct HPRTreeWrappingBuilder<T>
+where
+    T: Clone,
+{
+    items: Vec<IndexItem<T>>,
     extent: BBox,
 }
 
-/// The spatial index itself
-pub struct HPRTree<T>
+/// A variant of the spatial index which takes the element and its geometry in separately and does not return the geometry from queries
+pub struct HPRTreeWrapping<T>
 where
-    T: SpatiallyIndexable,
     T: Clone,
 {
-    items: Vec<T>,
+    items: Vec<IndexItem<T>>,
     extent: BBox,
     layer_start_index: Vec<usize>,
     node_bounds: Vec<BBox>,
@@ -28,33 +35,17 @@ where
 /// Example usage:
 ///
 /// ```
-/// use hprtree::{Point, BBox, HPRTreeBuilder, CoordinateType, SpatiallyIndexable};
+/// use hprtree::{Point, BBox, HPRTreeWrappingBuilder};
 ///
-///#[derive(Clone)]
-///struct IndexableStaticStr {
-///    pub point: Point,
-///    pub val: &'static str,
-///}
-///
-///impl SpatiallyIndexable for IndexableStaticStr {
-///    fn x(&self) -> CoordinateType {
-///        self.point.x()
-///    }
-///
-///    fn y(&self) -> CoordinateType {
-///        self.point.y()
-///    }
-///}
-///
-/// let mut index = HPRTreeBuilder::new(10);
-/// index.insert(IndexableStaticStr{val: "Bob", point: Point{ x: 0f32, y: 0f32 }});
+/// let mut index = HPRTreeWrappingBuilder::new(10);
+/// index.insert("Bob", Point{ x: 0f32, y: 0f32 });
 /// for _ in 0..2 {
-///     index.insert(IndexableStaticStr{val: "Alice", point: Point{ x: 1f32, y: 1f32 }});
+///     index.insert("Alice", Point{ x: 1f32, y: 1f32 });
 /// }
-/// index.insert(IndexableStaticStr{val: "James", point: Point{ x: 2.5f32, y: -2.5f32 }});
-/// index.insert(IndexableStaticStr{val: "Annie", point: Point{ x: 20f32, y: 1f32 }});
+/// index.insert("James", Point{ x: 2.5f32, y: -2.5f32 });
+/// index.insert("Annie", Point{ x: 20f32, y: 1f32 });
 /// for _ in 0..5 {
-///     index.insert(IndexableStaticStr{val: "Thomas", point: Point{ x: 1f32, y: -50f32 }});
+///     index.insert("Thomas", Point{ x: 1f32, y: -50f32 });
 /// }
 ///
 /// let index = index.build();
@@ -68,36 +59,38 @@ where
 ///                maxy: 5f32
 ///            }, &mut result);
 ///
-/// assert!(result.len() == 4);// this Vec now contains the IndexableStaticStrs of "Bob", "Alice"(x2) and "James"
+/// assert!(result.len() == 4);// this Vec now contains the &strs "Bob", "Alice"(x2) and "James"
 /// for i in result {
-///     assert!(i.val == "Bob" || i.val == "Alice" || i.val == "James");
+///     assert!(i == "Bob" || i == "Alice" || i == "James");
 ///     // there are absolutely no guarantees regarding ordering though
 /// }
 /// ```
 
-impl<T> HPRTreeBuilder<T>
+impl<T> HPRTreeWrappingBuilder<T>
 where
-    T: SpatiallyIndexable,
     T: Clone,
 {
     /// Creates a new tree builder with base capacity
     pub fn new(size: usize) -> Self {
-        HPRTreeBuilder {
+        HPRTreeWrappingBuilder {
             items: Vec::with_capacity(size),
             extent: BBox::default(),
         }
     }
 
     /// Inserts an element into the index
-    pub fn insert(&mut self, item: T) {
-        self.extent.expand_to_include_spatially_indexable(&item);
-        self.items.push(item);
+    pub fn insert(&mut self, item: T, geom: Point) {
+        self.extent.expand_to_include_point(&geom);
+        self.items.push(IndexItem {
+            index_geom: geom,
+            item,
+        });
     }
 
     /// Sorts the data, builds the index and transfers the builders state into an HPRTree which is then returned. If [sort_items](#method.sort_items) has been called before, prefer [build_sorted](#method.build_sorted) instead
-    pub fn build(mut self) -> HPRTree<T> {
+    pub fn build(mut self) -> HPRTreeWrapping<T> {
         if self.items.len() < NODE_CAPACITY {
-            return HPRTree {
+            return HPRTreeWrapping {
                 items: self.items,
                 extent: self.extent,
                 layer_start_index: Vec::new(),
@@ -126,16 +119,16 @@ where
         let extent_min = self.extent.minx.min(self.extent.miny);
 
         self.items.sort_by_cached_key(|pt| {
-            let x: u32 = ((pt.x() - extent_min) / stride_x).trunc() as u32;
-            let y: u32 = ((pt.y() - extent_min) / stride_y).trunc() as u32;
+            let x: u32 = ((pt.index_geom.x - extent_min) / stride_x).trunc() as u32;
+            let y: u32 = ((pt.index_geom.y - extent_min) / stride_y).trunc() as u32;
             hilbert_xy_to_index(x, y)
         });
     }
 
     /// Builds the index and transfers the builders state into an HPRTree which is then returned, depends on the data being sorted (by [sort_items](#method.sort_items)) already
-    pub fn build_sorted(self) -> HPRTree<T> {
+    pub fn build_sorted(self) -> HPRTreeWrapping<T> {
         if self.items.len() < NODE_CAPACITY {
-            return HPRTree {
+            return HPRTreeWrapping {
                 items: self.items,
                 extent: self.extent,
                 layer_start_index: Vec::new(),
@@ -150,7 +143,7 @@ where
         self.compute_leaf_nodes(&layer_start_index, &mut node_bounds);
         self.compute_layer_nodes(&layer_start_index, &mut node_bounds);
 
-        HPRTree {
+        HPRTreeWrapping {
             items: self.items,
             extent: self.extent,
             layer_start_index,
@@ -203,7 +196,7 @@ where
                 if index >= self.items.len() {
                     return;
                 }
-                node_bounds[i].expand_to_include_spatially_indexable(&self.items[index]);
+                node_bounds[i].expand_to_include_point(&self.items[index].index_geom);
             }
         }
     }
@@ -237,9 +230,8 @@ where
     }
 }
 
-impl<T> HPRTree<T>
+impl<T> HPRTreeWrapping<T>
 where
-    T: SpatiallyIndexable,
     T: Clone,
 {
     fn query_node_children(
@@ -267,8 +259,8 @@ where
                 return;
             }
             let current_item = &self.items[item_index];
-            if query_env.contains_spatially_indexable(current_item) {
-                candidate_list.push(current_item.clone());
+            if query_env.contains(&current_item.index_geom) {
+                candidate_list.push(current_item.item.clone());
             }
         }
     }

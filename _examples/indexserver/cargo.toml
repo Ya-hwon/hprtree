@@ -1,0 +1,13 @@
+[package]
+name = "hprtree_examples_indexserver"
+version = "0.2.3"
+edition = "2021"
+
+[[bin]]
+name = "indexserver"
+path = "indexserver.rs"
+
+[dependencies]
+hprtree = { version = "0.2.3", path = "../../" }
+actix-web = "4.9.0"
+serde = { version = "1.0.216", features = ["derive"] }

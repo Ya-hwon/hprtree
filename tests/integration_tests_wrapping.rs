@@ -1,26 +1,10 @@
 #![feature(float_next_up_down)]
 
-use hprtree::{BBox, CoordinateType, HPRTreeBuilder, Point, SpatiallyIndexable};
+use hprtree::{BBox, HPRTreeWrappingBuilder, Point};
 use rand::prelude::Distribution;
 
 #[test]
 fn random_contain_test() {
-    #[derive(Clone)]
-    struct IndexableBoolean {
-        pub point: Point,
-        pub b: bool,
-    }
-
-    impl SpatiallyIndexable for IndexableBoolean {
-        fn x(&self) -> CoordinateType {
-            self.point.x()
-        }
-
-        fn y(&self) -> CoordinateType {
-            self.point.y()
-        }
-    }
-
     const N_INCLUDED: usize = 100_000;
     const N_EXCLUDED: usize = 50_000;
 
@@ -40,7 +24,7 @@ fn random_contain_test() {
     let excluded_y_high_range = (90f32.next_up())..180f32;
     let excluded_y_high = rand::distributions::Uniform::from(excluded_y_high_range);
 
-    let mut index = HPRTreeBuilder::new(N_INCLUDED + N_EXCLUDED);
+    let mut index = HPRTreeWrappingBuilder::new(N_INCLUDED + N_EXCLUDED);
 
     let bbox_included_lim = BBox {
         minx: -180f32,
@@ -52,35 +36,29 @@ fn random_contain_test() {
     let mut bbox_all = BBox::default();
 
     for _ in 0..N_INCLUDED {
-        let item = IndexableBoolean {
-            point: Point {
-                x: included_x.sample(&mut rng),
-                y: included_y.sample(&mut rng),
-            },
-            b: true,
+        let pt = Point {
+            x: included_x.sample(&mut rng),
+            y: included_y.sample(&mut rng),
         };
-        bbox_included.expand_to_include_spatially_indexable(&item);
-        bbox_all.expand_to_include_spatially_indexable(&item);
-        index.insert(item);
+        bbox_included.expand_to_include_point(&pt);
+        bbox_all.expand_to_include_point(&pt);
+        index.insert(true, pt);
     }
     for _ in 0..N_EXCLUDED {
-        let item = IndexableBoolean {
-            point: Point {
-                x: if rand::random() {
-                    excluded_x_low.sample(&mut rng)
-                } else {
-                    excluded_x_high.sample(&mut rng)
-                },
-                y: if rand::random() {
-                    excluded_y_low.sample(&mut rng)
-                } else {
-                    excluded_y_high.sample(&mut rng)
-                },
+        let pt = Point {
+            x: if rand::random() {
+                excluded_x_low.sample(&mut rng)
+            } else {
+                excluded_x_high.sample(&mut rng)
             },
-            b: false,
+            y: if rand::random() {
+                excluded_y_low.sample(&mut rng)
+            } else {
+                excluded_y_high.sample(&mut rng)
+            },
         };
-        bbox_all.expand_to_include_spatially_indexable(&item);
-        index.insert(item);
+        bbox_all.expand_to_include_point(&pt);
+        index.insert(false, pt);
     }
 
     let index = index.build();
@@ -89,13 +67,13 @@ fn random_contain_test() {
     let query_included_lim = index.query(&bbox_included_lim);
     assert!(query_included_lim.len() == N_INCLUDED);
     for i in query_included_lim {
-        assert!(i.b);
+        assert!(i);
     }
 
     let query_included = index.query(&bbox_included);
     assert!(query_included.len() == N_INCLUDED);
     for i in query_included {
-        assert!(i.b);
+        assert!(i);
     }
 
     let query_all = index.query(&bbox_all);
@@ -143,37 +121,18 @@ fn random_contain_test() {
         .chain(query_bottom.into_iter())
         .chain(query_right.into_iter())
     {
-        assert!(!i.b);
+        assert!(!i);
     }
 }
 
 #[test]
 fn hprtree_end_to_end() {
-    #[derive(Clone)]
-    struct IndexableI32 {
-        pub point: Point,
-        pub val: i32,
-    }
-
-    impl SpatiallyIndexable for IndexableI32 {
-        fn x(&self) -> CoordinateType {
-            self.point.x()
-        }
-
-        fn y(&self) -> CoordinateType {
-            self.point.y()
-        }
-    }
-
-    let mut index = HPRTreeBuilder::new(259200);
+    let mut index = HPRTreeWrappingBuilder::new(259200);
     let mut x = -180f32;
     for i in 0..(180 * 2 * 2) {
         let mut y = -90f32;
         for j in 0..(90 * 2 * 2) {
-            index.insert(IndexableI32 {
-                val: i * 1000 + j,
-                point: Point { x, y },
-            });
+            index.insert(i * 1000 + j, Point { x, y });
             y += 0.5;
         }
         x += 0.5;
@@ -187,8 +146,8 @@ fn hprtree_end_to_end() {
     });
     assert!(list.len() == 1681);
     for elem in list {
-        let j = elem.val % 1000;
-        let i = (elem.val - j) / 1000;
+        let j = elem % 1000;
+        let i = (elem - j) / 1000;
         assert!(j <= 200);
         assert!(j >= 160);
         assert!(i <= 380);
